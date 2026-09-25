@@ -695,6 +695,32 @@ class JSpaceControllerTests(unittest.TestCase):
         )
         self.assertIn("clean", named_benchmark.stdout)
 
+    def test_ship_allows_sentence_opening_arrow_but_not_operator_arrow(self):
+        ordinary = [
+            "\u21d2 The decision was a per-table fact, not a global rule.\n",
+            "2. \u27f9 **The persistence hypothesis is refuted.** It was not a one-off.\n",
+            "The search finished. \u27f9 **The answer is not a larger weight.**\n",
+            "The first run failed. \u21d2 The rerun used a fresh cache. \u21d2 It passed.\n",
+            "\u21d2 \uadf8 \uacb0\uc815\uc740 \uc804\uc5ed \uaddc\uce59\uc774 \uc544\ub2c8\uc5c8\ub2e4.\n",
+        ]
+        for text in ordinary:
+            result = self.run_controller("ship", "-", stdin=text)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertNotIn("Dense notation appears", result.stdout, text)
+
+        dense = [
+            "A \u21d2 B\n",
+            "\u21d2 contradiction\n",
+            "\u21d2 contradiction \u21d2 the capacity bound is too loose\n",
+            "used[0] = FULL \u27f9 blocked?!\n",
+            "The cache was cold.\n\u21d2 rebuild \u2234 slow\n",
+            "Leg 0 is full\n\u21d2 the save is blocked.\n",
+        ]
+        for text in dense:
+            result = self.run_controller("ship", "-", stdin=text)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("Dense notation appears", result.stdout, text)
+
     def test_ship_skips_fenced_code_but_checks_following_prose(self):
         fenced = self.run_controller(
             "ship",
