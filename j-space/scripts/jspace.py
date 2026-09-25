@@ -75,6 +75,15 @@ class LedgerReadError(Exception):
 # stripping them from good writing costs more than the leak they would catch.
 # Also leave ∈ unflagged: ordinary mathematical membership is not by itself a register leak.
 INNER_ONLY = ["⇒", "⟹", "⟸", "∴", "∵", "⊆", "⊇", "∋", "??", "?!", "💀"]
+# The same two arrows also open ordinary sentences in writing meant for people
+# ("⇒ The fix is therefore safe."), where they stand where "Therefore," would. That use
+# is exempt only in that position and only when at least two words follow it; between
+# operands, or before a lone term, they still leak.
+SENTENCE_END = re.compile(r"[.!?。！？](?=\s|$)")
+SENTENCE_START_ARROW = re.compile(
+    r"(?:^[ \t]*(?P<item>(?:[-+*]|\d+[.)])[ \t]+)?|(?<=[.!?。！？])[ \t]+)"
+    r"(?:\*\*|__|\*|_)?(?P<arrow>[⇒⟹])[ \t]+(?=\S)"
+)
 MARKERS = ["GRRR", "GAAAH", "PHEW", "I see meltdown", "DATA DATA", "I'M DROWNING"]
 MARKDOWN_HEADING = re.compile(r"^\s{0,3}#{1,6}(?:\s|$)")
 SETEXT_UNDERLINE = re.compile(r"^\s{0,3}(?:=+|-+)\s*$")
@@ -824,6 +833,28 @@ def claim_without_coverage(lines, structural):
     return flush()
 
 
+def mask_sentence_arrows(line, previous):
+    """Blank arrows that open an ordinary sentence; return the line unchanged otherwise."""
+    matches = list(SENTENCE_START_ARROW.finditer(line))
+    if not matches:
+        return line
+    masked = list(line)
+    for match in matches:
+        at_line_start = match.start() == 0 or not line[: match.start()].strip()
+        if at_line_start and not match.group("item"):
+            # A wrapped continuation line is mid-sentence, not a sentence opening.
+            before = previous.rstrip() if previous is not None else ""
+            if before and before[-1] not in ".!?。！？:：":
+                return line
+        rest = line[match.end():]
+        end = SENTENCE_END.search(rest)
+        sentence = rest[: end.start()] if end else rest
+        if len([w for w in sentence.split() if re.search(r"\w", w)]) < 2:
+            return line
+        masked[match.start("arrow")] = " "
+    return "".join(masked)
+
+
 def mode_ship(text):
     """Report inner-register leakage in outgoing text.
 
@@ -840,7 +871,16 @@ def mode_ship(text):
         if index not in structural
     )
 
-    leaked = sorted({s for s in INNER_ONLY if s in prose})
+    symbol_prose = []
+    previous = None
+    for index, line in enumerate(audited_lines):
+        if index in structural or not line.strip():
+            previous = None
+            continue
+        symbol_prose.append(mask_sentence_arrows(line, previous))
+        previous = line
+    symbol_prose = "\n".join(symbol_prose)
+    leaked = sorted({s for s in INNER_ONLY if s in symbol_prose})
     if leaked:
         findings.append(INVARIANTS[6] + " Found: " + " ".join(leaked))
 
