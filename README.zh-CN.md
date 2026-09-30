@@ -190,7 +190,7 @@ PowerShell 中引用解释器路径时使用调用运算符：
 它的 `ship` 结果是提示；严格门禁使用 `control.py`。
 
 通过 `route --level xhigh --module modules/repository.md --reason "集成需要独立复核"` 可在保留任务状态的同时升档或切换可选活动模块。
-检查点使用 `note --check "结论" --by "方法与覆盖范围" --evidence PATH`。
+检查点使用 `note --check "结论" --by "方法与覆盖范围" --evidence PATH`。已有检查点、问题或核心锚点时修改目标，须加 `--inherit`（同一任务改写，保留）或 `--new-task` 并附 `--next`（归档旧状态后重新开始）。
 交付前，主代理通过 `report` 的 `--completion PATH` 提交逐项验收证据；每个子代理提交交付与独立复核。
 随后运行 `check --stage ship`。完整参数顺序见控制器参考。
 

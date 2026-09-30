@@ -223,6 +223,8 @@ text audit for bounded work. Its `ship` output is advisory; use `control.py` for
 Use `route --level xhigh --module modules/repository.md --reason "Integration needs independent review"`
 to raise the level or change active optional modules while preserving task state. Record
 checkpoints with `note --check "Claim" --by "Method and coverage" --evidence PATH`.
+When checkpoints, questions, or core anchors exist, a changed goal needs `--inherit` (same task
+reworded) or `--new-task` with `--next` (archive the previous state and start clean).
 Before shipment, root submits `report` with `--completion PATH` containing the goal-by-goal
 acceptance check; each delegate supplies its reports and independent review. Then run
 `check --stage ship`. The controller reference contains the complete argument sequence.

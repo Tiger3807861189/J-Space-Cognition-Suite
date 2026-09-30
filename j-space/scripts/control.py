@@ -12,6 +12,7 @@ import stat
 import sys
 import tempfile
 import time
+import unicodedata
 
 SKILL = Path(__file__).resolve().parents[1]
 EXCLUDED = {'.git', '.jspace', 'node_modules', '.venv', 'venv', '__pycache__',
@@ -531,11 +532,44 @@ def run(root, state, args):
         previous_contract = (state['goal'], list(state['core']))
         require(any(getattr(args, key) is not None for key in ('goal', 'next', 'solo_reason', 'core', 'check', 'open', 'close', 'reopen')),
                 'Set goal, next, core, checkpoint, question, or solo reason.')
+        require(args.goal is not None or not args.inherit, '--inherit requires --goal.')
+        prior_goal, prior_snapshot = state['goal'], encoded(state)
         for key in ('goal', 'next', 'solo_reason'):
             value = getattr(args, key)
             if value is not None:
                 require(nonempty(value), key + ' cannot be empty.')
                 state[key] = value
+        # A new goal can be a task boundary. Core, checkpoints and questions recorded for
+        # the previous task are not facts of the next one; left active they read as current
+        # verification, and when their evidence changes they block every gate. A changed
+        # goal string cannot tell a new task from the same task reworded, so the caller
+        # chooses: --new-task archives the previous state verbatim and starts clean,
+        # --inherit keeps it. With state to carry and neither flag, a changed goal is
+        # refused. Security findings stay: they describe the repository, not the goal.
+        archived = None
+        carried = {'checkpoints': len(state['checkpoints']), 'questions': len(state['questions']),
+                   'core': len(state['core']) + len(state.get('parked_core', []))}
+        same = lambda a, b: unicodedata.normalize('NFC', a).strip() == unicodedata.normalize('NFC', b).strip()
+        require(not (args.new_task and args.inherit), '--new-task and --inherit are exclusive.')
+        require(args.goal is not None or not args.new_task, '--new-task requires --goal.')
+        if args.goal is not None and not same(args.goal, prior_goal) and not args.inherit and any(carried.values()):
+            require(args.new_task,
+                    'The goal changed while ' + ', '.join(str(v) + ' ' + k for k, v in carried.items() if v) +
+                    ' are recorded. Same task reworded: add --inherit to keep them. New task: add --new-task '
+                    '(with --next) to archive them and start clean.')
+            require(args.supersede is None and args.close is None and args.reopen is None,
+                    '--supersede, --close and --reopen point at the previous task, which a new --goal archives '
+                    'and clears; run them without --goal first, or pass --inherit.')
+            require(args.next is not None, 'A new goal needs --next: the current next action belongs to the previous task.')
+            open_q = sum(1 for q in state['questions'].values() if not q['closed'])
+            stamp = time.strftime('%Y%m%d-%H%M%S')
+            name, n = '.jspace/control-' + stamp + '.json', 1
+            while safe_path(root, name, False).exists():
+                n += 1
+                name = '.jspace/control-' + stamp + '-' + str(n) + '.json'
+            archived = (name, carried, open_q)
+            state['core'], state['checkpoints'], state['questions'] = [], [], {}
+            state.pop('parked_core', None)
         if args.core is not None:
             require(nonempty(args.core), 'Core entry cannot be empty.')
             active = [item for item in state['core'] if item != args.core] + [args.core]
@@ -585,6 +619,13 @@ def run(root, state, args):
             state['questions'][args.close].update(closed=True, checkpoint=checkpoint['id'])
         if previous_contract != (state['goal'], state['core']):
             broadcast_children(state)
+        if archived is not None:
+            atomic(safe_path(root, archived[0], False), prior_snapshot)
+            left = ', '.join(str(v) + ' ' + k for k, v in archived[1].items() if v)
+            gated = (' (' + str(archived[2]) + ' open questions no longer gate shipment)') if archived[2] else ''
+            return ('Archived the previous task state (goal: ' + prior_goal + ') to ' + archived[0] + ' — ' + left +
+                    ' left behind' + gated + '. To undo, copy that file back to .jspace/control.json.\n' +
+                    shared_context(state))
         return shared_context(state)
     if command == 'read':
         sources = read_files(state, args.agent, args.paths or skill_files(state))
@@ -747,6 +788,10 @@ def parser():
     for name in ('goal', 'next', 'solo-reason', 'core', 'check', 'by', 'evidence', 'open', 'settled-by', 'close', 'reopen'):
         note.add_argument('--' + name)
     note.add_argument('--supersede', type=int)
+    note.add_argument('--inherit', action='store_true',
+                      help='with --goal: same task reworded; keep the recorded core, checkpoints and questions')
+    note.add_argument('--new-task', action='store_true',
+                      help='with --goal: a new task; archive the recorded core, checkpoints and questions and start clean')
     route = sub.add_parser('route')
     route.add_argument('--level', choices=('low', 'medium', 'media', 'high', 'xhigh'))
     route.add_argument('--module', action='append', default=[])
@@ -841,7 +886,9 @@ def main(argv=None):
         with locked(root):
             state_path = safe_path(root, '.jspace/control.json', False)
             if args.command == 'init':
-                require(not state_path.exists(), 'Controller already initialized; use note to update goal or next.')
+                require(not state_path.exists(), 'Controller already initialized; use note to update goal or next '
+                        '(a new task: note --goal ... --next ... --new-task archives the previous state; '
+                        'the same task: --inherit keeps it).')
                 level = 'medium' if args.level == 'media' else args.level
                 modules = list(dict.fromkeys(default_modules(level) + args.module))
                 for name in modules:
