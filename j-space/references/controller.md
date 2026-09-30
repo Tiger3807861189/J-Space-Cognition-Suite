@@ -36,6 +36,12 @@ Use `note --goal "..." --next "..."` to update either or both fields. You can pr
 `--solo-reason "Host delegation is unavailable because ..."` to `init` or `note` when an
 `xhigh` task cannot use actual agents. Record the unavailable capability and resulting
 verification limit; this is an explicit degraded mode, not independent verification.
+When core, checkpoints, or questions are recorded, a `note --goal` that differs from the current goal
+must say which change it is. `--inherit` marks the same task reworded and keeps everything. `--new-task`
+marks a new task: the previous state is archived verbatim to `.jspace/control-<timestamp>.json`, and core,
+checkpoints, and questions are cleared while security findings stay. A new task requires `--next` and
+refuses `--supersede`, `--close`, and `--reopen` in the same command. Without either flag the change is
+refused. To undo an archive, copy it back to `.jspace/control.json`.
 
 You can repeat `--module` to select skill-relative source files. The default active modules
 are `self-monitoring.md` for low/medium, `capacity.md` and `broadcast.md` for high, and
